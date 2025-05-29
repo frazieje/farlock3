@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "MDBT50Q")(type "KiCad")(uri "${KIPRJMOD}/libraries/MDBT50Q/MDBT50Q.kicad_sym")(options "")(descr ""))
+)
