@@ -20,4 +20,5 @@
 .DS_Store
 .DS_Store?
 
-
+#BOM file
+*.csv
