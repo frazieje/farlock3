@@ -2,4 +2,5 @@
   (version 7)
   (lib (name "MDBT50Q")(type "KiCad")(uri "${KIPRJMOD}/libraries/MDBT50Q/MDBT50Q.pretty")(options "")(descr ""))
   (lib (name "digikey-footprints")(type "KiCad")(uri "/Users/joelfrazier/Downloads/digikey-kicad-library-1.2/digikey-footprints.pretty")(options "")(descr ""))
+  (lib (name "OS102011MA1QN1")(type "KiCad")(uri "${KIPRJMOD}/libraries/OS102011MA1QN1.pretty")(options "")(descr ""))
 )
