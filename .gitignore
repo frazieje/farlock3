@@ -22,3 +22,5 @@
 
 #BOM file
 *.csv
+
+*.lck
