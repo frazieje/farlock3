@@ -16,4 +16,4 @@ Features:
 
 [farlock3 v02 schematic](farlock3.pdf)
 
-<img width="1700" alt="farlock3 v02 PCB render" src="farlock-v02.png" />
+<img width="1700" alt="farlock3 v02 PCB render" src="farlock3-v02.png" />
