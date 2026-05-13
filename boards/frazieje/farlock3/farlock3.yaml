@@ -1,0 +1,27 @@
+identifier: farlock3
+name: FARLock3
+vendor: frazieje
+type: mcu
+arch: arm
+ram: 256
+flash: 1024
+toolchain:
+  - zephyr
+  - gnuarmemb
+supported:
+  - adc
+  - arduino_gpio
+  - arduino_i2c
+  - arduino_serial
+  - arduino_spi
+  - ble
+  - counter
+  - gpio
+  - i2c
+  - i2s
+  - pwm
+  - spi
+  - usb_device
+  - usbd
+  - watchdog
+  - netif:openthread

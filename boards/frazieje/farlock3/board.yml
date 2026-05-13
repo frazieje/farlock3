@@ -1,0 +1,6 @@
+board:
+  name: farlock3
+  full_name: FARLock v3
+  vendor: frazieje
+  socs:
+  - name: nrf52840
