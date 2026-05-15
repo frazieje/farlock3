@@ -1,7 +1,10 @@
 sample:
-  description: Matter Lock example
-  name: Matter Lock
+  description: FarLock3 Application
+  name: FarLock3 Matter door lock firmware
 common:
+  integration_platforms:
+    - farlock3
+    - nrf52840dk/nrf52840
   tags:
     - sysbuild
     - ci_samples_matter

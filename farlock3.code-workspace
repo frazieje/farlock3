@@ -1,0 +1,10 @@
+{
+    "folders": [
+        {
+            "path": "app"
+        }
+    ],
+    "nrf-connect.applications": [
+        "${worspaceFolder}/app"
+    ]
+}

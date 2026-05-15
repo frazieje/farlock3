@@ -23,6 +23,10 @@
 	status = "disabled";
 };
 
+&i2c1 {
+	status = "disabled";
+};
+
 &pwm0 {
 	status = "disabled";
 };
@@ -32,9 +36,5 @@
 };
 
 &spi3 {
-	status = "disabled";
-};
-
-&usbd {
 	status = "disabled";
 };

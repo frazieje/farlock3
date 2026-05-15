@@ -201,6 +201,9 @@ zephyr_udc0: &usbd {
 &i2c0 {
 	status = "disabled";
 };
+&i2c1 {
+	status = "disabled";
+};
 &pwm0 {
 	status = "disabled";
 };
