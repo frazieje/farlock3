@@ -1,9 +1,19 @@
 #include "usb.h"
 
+#include <stdint.h>
+
+#include <zephyr/kernel.h>
 #include <zephyr/usb/usb_device.h>
-#include <zephyr/drivers/usb/usb_dc.h>
+#include <zephyr/device.h>
 #include <zephyr/usb/usbd.h>
+#include <zephyr/usb/bos.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_REGISTER(farlock3_usbd, LOG_LEVEL_INF);
+
+/* Semaphore signaled when VBUS is detected (host has connected) */
+static K_SEM_DEFINE(usb_vbus_sem, 0, 1)
 
 /* By default, do not register the USB DFU class DFU mode instance. */
 static const char *const blocklist[] = {
@@ -11,12 +21,12 @@ static const char *const blocklist[] = {
 	NULL,
 };
 
-USBD_DEVICE_DEFINE(farlock3_usbd, DEVICE_DT_GET(DT_NODELABEL(zehpyr_udc0)), CONFIG_FARLOCK3_USBD_VID, CONFIG_FARLOCK3_USBD_PID);
+USBD_DEVICE_DEFINE(farlock3_usbd, DEVICE_DT_GET(DT_NODELABEL(zephyr_udc0)), CONFIG_FARLOCK3_USBD_VID, CONFIG_FARLOCK3_USBD_PID);
 
 /* doc string instantiation start */
 USBD_DESC_LANG_DEFINE(farlock3_lang);
-USBD_DESC_MANUFACTURER_DEFINE(farlock3_mfr, CONFIG_SAMPLE_USBD_MANUFACTURER);
-USBD_DESC_PRODUCT_DEFINE(farlock3_product, CONFIG_SAMPLE_USBD_PRODUCT);
+USBD_DESC_MANUFACTURER_DEFINE(farlock3_mfr, CONFIG_FARLOCK3_USBD_MANUFACTURER);
+USBD_DESC_PRODUCT_DEFINE(farlock3_product, CONFIG_FARLOCK3_USBD_PRODUCT);
 IF_ENABLED(CONFIG_HWINFO, (USBD_DESC_SERIAL_NUMBER_DEFINE(farlock3_sn)));
 
 /* doc string instantiation end */
@@ -146,7 +156,7 @@ struct usbd_context *farlock3_usbd_setup_device(usbd_msg_cb_t msg_cb)
 	}
 	/* doc functions register end */
 
-	sample_fix_code_triple(&farlock3_usbd, USBD_SPEED_FS);
+	farlock3_fix_code_triple(&farlock3_usbd, USBD_SPEED_FS);
 	usbd_self_powered(&farlock3_usbd, attributes & USB_SCD_SELF_POWERED);
 
 	if (msg_cb != NULL) {
@@ -192,22 +202,84 @@ static struct usbd_context *farlock3_usbd_init_device(usbd_msg_cb_t msg_cb)
 	return &farlock3_usbd;
 }
 
-int start_usb() {
-    const struct device *const dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+static void usbd_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *const msg) {
+    LOG_INF("USBD message: %s", usbd_msg_type_string(msg->type));
+
+    if (usbd_can_detect_vbus(ctx)) {
+        if (msg->type == USBD_MSG_VBUS_READY) {
+	    if (usbd_enable(ctx)) {
+	        LOG_ERR("Failed to enable USB device on VBUS ready");
+		return;
+	    }
+	    k_sem_give(&usb_vbus_sem);
+	} else if (msg->type == USBD_MSG_VBUS_REMOVED) {
+	    if (usbd_disable(ctx)) {
+		LOG_ERR("Failed to disable USB device on VBUS removed");
+	    }
+	    k_sem_reset(&usb_vbus_sem);
+	}
+    }
+}
+
+static int farlock3_usb_wait_for_dtr(int dtr_timeout_ms) {
+
+    /* Wait for DTR (host opened the port).
+     * Bounded so we don'thang forever if VBUS is present but nothing opens
+     * the serial port. */
+    const struct device *console_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
     uint32_t dtr = 0;
+    int elapsed_ms = 0;
 
-    if (usb_enable(NULL)) {
-        return 0;
-    }   
-
-    usbd_enable();
-
-    /* Poll if the DTR flag was set */
-    while (!dtr) {
-        uart_line_ctrl_get(dev, UART_LINE_CTRL_DTR, &dtr);
-        /* Give CPU resources to low priority threads. */
-        k_sleep(K_MSEC(100));
+    while (!dtr && elapsed_ms < dtr_timeout_ms) {
+	uart_line_ctrl_get(console_dev, UART_LINE_CTRL_DTR, &dtr);
+	if (!dtr) {
+	    k_sleep(K_MSEC(100));
+	    elapsed_ms += 100;
+	}
     }
 
+    return dtr;
+}
+
+static int farlock3_usb_wait_for_host(int vbus_timeout_ms, int dtr_timeout_ms) {
+
+    uint32_t dtr = 0;
+    
+    /* First, wait for VBUS. If we don'tsee it in the given window,
+     * we're probably not connected to a host, so we skip the rest. */
+    if (k_sem_take(&usb_vbus_sem, K_MSEC(vbus_timeout_ms)) != 0) {
+	LOG_INF("No USB host detected, skipping console wait");
+	return -ETIMEDOUT;
+    }
+
+    LOG_INF("USB host detected, waiting for terminal to open");
+
+    // VBUS is up, USB is enabled. Now wait for DTR (host opened the port).
+    dtr = farlock3_usb_wait_for_dtr(dtr_timeout_ms);
+
+    if (!dtr) {
+	LOG_INF("USB connected but terminal not opened, proceeding anyway");
+    }
+
+    LOG_INF("Terminal connected");
     return 0;
+}
+
+int start_usb() {
+
+    struct usbd_context *usbd;
+
+    usbd = farlock3_usbd_init_device(usbd_msg_cb);
+    if (usbd == NULL) {
+    	return -ENODEV; 
+    }
+
+    if (!usbd_can_detect_vbus(usbd)) {
+        if (usbd_enable(usbd)) {
+	    return -ENODEV;
+	}
+	return farlock3_usb_wait_for_dtr(5000);
+    } else {
+        return farlock3_usb_wait_for_host(2000, 5000);
+    }
 }

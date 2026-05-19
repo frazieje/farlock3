@@ -192,6 +192,55 @@ config LOCK_ACCESS_STORAGE_PROTECTED_STORAGE_UID_OFFSET
 
 endif # LOCK_ACCESS_STORAGE_PROTECTED_STORAGE
 
+config FARLOCK3_USBD_VID
+	hex "FARLock3 USB VID"
+	default 0x1915
+	help
+	  USB Vendor ID for the FARLock3 device.
+
+config FARLOCK3_USBD_PID
+	hex "FARLock3 USB PID"
+	default 0x0004
+	help
+	  USB Product ID for the FARLock3 device.
+
+config FARLOCK3_USBD_MANUFACTURER
+	string "USB device manufacturer string"
+	default "frazieje"
+	help
+	  Manufacturer string descriptor.
+
+config FARLOCK3_USBD_PRODUCT
+	string "USB device product string"
+	default "FARLock v3"
+	help
+	  Product string descriptor.
+
+config FARLOCK3_USBD_SELF_POWERED
+	bool "USB self-powered attribute"
+	default y
+	help
+	  Set the self-powered attribute in the configuration descriptor.
+
+config FARLOCK3_USBD_REMOTE_WAKEUP
+	bool "USB remote wakeup attribute"
+	default n
+	help
+	  Set the remote wakeup attribute
+
+config FARLOCK3_USBD_MAX_POWER
+	int "USB device maximum power"
+	default 125
+	range 0 250
+	help
+	  Maximum power in 2 mA units
+
+config FARLOCK3_USBD_20_EXTENSION_DESC
+	bool "Use default USB 2.0 Extension Descriptor"
+	depends on USBD_BOS_SUPPORT
+	help
+	  Set bcdUSB value to 0201 and use default USB 2.0 Extension Descriptor
+
 source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.features"
 source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.defaults"
 source "$(ZEPHYR_NRF_MODULE_DIR)/samples/matter/common/src/Kconfig"

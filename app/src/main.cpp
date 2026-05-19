@@ -16,8 +16,15 @@ LOG_MODULE_REGISTER(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
 int main()
 {
-
-	start_usb();
+	int ret = start_usb();
+	if (ret) {
+	    LOG_INF("USB host not detected, code %d", ret);
+	}
+	
+//	ret = start_nfc();
+//	if (ret) {
+//	    LOG_INF("NFC failed to start, code %d", ret);
+//	}
 
 	CHIP_ERROR err = AppTask::Instance().StartApp();
 

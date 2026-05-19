@@ -29,6 +29,9 @@ target_include_directories(app PRIVATE
 )
 
 target_sources(app PRIVATE
+	#src/ndef_storage_c.cpp  
+	#src/ndef_storage.cpp  
+	#src/nfc.c
   src/usb.c
   src/app_task.cpp
   src/bolt_lock_manager.cpp
@@ -38,6 +41,7 @@ target_sources(app PRIVATE
   src/access/access_manager_credentials.cpp
   src/access/access_manager_users.cpp
   src/access/access_manager.cpp
+  #src/ndef_storage.cpp
 )
 
 target_sources_ifdef(CONFIG_LOCK_ACCESS_STORAGE_PERSISTENT_STORAGE app PRIVATE
