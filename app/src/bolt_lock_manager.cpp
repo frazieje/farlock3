@@ -42,7 +42,7 @@ void BoltLockManager::Init(StateChangeCallback callback)
 	AccessMgr::Instance().Init();
 
 #ifndef CONFIG_FARLOCK3_LOCK_SIMULATED
-	int err = lock_hw_init(PositionChangedHandler);
+	int err = lock_hw_init(SwitchChangedHandler);
 	if (err) {
 		LOG_ERR("Lock hardware initialisation failed (%d); bolt state is unknown", err);
 	} else {
@@ -52,8 +52,6 @@ void BoltLockManager::Init(StateChangeCallback callback)
 	}
 #endif
 
-	/* Set the default state */
-	Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(IsLocked());
 }
 
 bool BoltLockManager::GetUser(uint16_t userIndex, EmberAfPluginDoorLockUserInfo &user)
@@ -239,10 +237,14 @@ void BoltLockManager::HandleActuatorTimeout()
 #endif
 }
 
-void BoltLockManager::PositionChangedHandler(bool /* positionActive */)
+void BoltLockManager::SwitchChangedHandler(enum lock_hw_switch sw, bool /* active */)
 {
 	/* Runs on the system work queue; move to the application thread. */
-	Nrf::PostTask([] { sLock.HandlePositionChanged(); });
+	if (sw == LOCK_HW_SW_DIRECTION) {
+		Nrf::PostTask([] { sLock.HandleDirectionChanged(); });
+	} else {
+		Nrf::PostTask([] { sLock.HandlePositionChanged(); });
+	}
 }
 
 void BoltLockManager::HandlePositionChanged()
@@ -265,11 +267,43 @@ void BoltLockManager::HandlePositionChanged()
 	}
 
 	/* Not actuating: someone turned the thumb-turn or key by hand. */
+	SyncStateFromSwitches("Bolt moved manually");
+#endif
+}
+
+void BoltLockManager::HandleDirectionChanged()
+{
+#ifndef CONFIG_FARLOCK3_LOCK_SIMULATED
+	LOG_INF("Handedness switch now %s", lock_hw_lock_direction() == LOCK_HW_DIR_RIGHT ? "right" : "left");
+
+	if (IsActuating()) {
+		/*
+		 * The motor is turning in a direction that just stopped meaning what it
+		 * meant. Stop it where it is and let the switches say what that is.
+		 */
+		k_timer_stop(&mActuatorTimer);
+		(void)lock_hw_motor_stop();
+		LOG_WRN("Handedness changed while the bolt was moving; motor stopped");
+		SetState(lock_hw_is_locked() ? State::kLockingCompleted : State::kUnlockingCompleted);
+		return;
+	}
+
+	SyncStateFromSwitches("Handedness changed");
+#endif
+}
+
+void BoltLockManager::SyncStateFromSwitches(const char *why)
+{
+#ifndef CONFIG_FARLOCK3_LOCK_SIMULATED
+	const bool isLocked = lock_hw_is_locked();
 	const State newState = isLocked ? State::kLockingCompleted : State::kUnlockingCompleted;
+
 	if (newState != mStateData.mState) {
-		LOG_INF("Bolt moved manually to the %s position", isLocked ? "locked" : "unlocked");
+		LOG_INF("%s: bolt is now %s", why, isLocked ? "locked" : "unlocked");
 		SetStateData(StateData{ newState, OperationSource::kManual, {}, {}, {} });
 	}
+#else
+	ARG_UNUSED(why);
 #endif
 }
 

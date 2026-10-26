@@ -232,9 +232,12 @@ endchoice
 config CHIP_ENABLE_ICD_SUPPORT
 	default y
 
-# Reduce Thread TX output power to 0 dBm for SED device
+# Thread TX output power. The nRF52840 tops out at +8 dBm. A sleepy end device
+# only transmits for a fraction of a millisecond per poll, so the extra current
+# is lost in the sleep floor, while the 8 dB of margin matters when the lock is
+# mounted on a steel door across a few walls from the border router.
 config OPENTHREAD_DEFAULT_TX_POWER
-	default 0
+	default 8
 
 endif # OPENTHREAD
 

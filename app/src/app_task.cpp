@@ -7,6 +7,7 @@
 #include "app_task.h"
 #include "bolt_lock_manager.h"
 #include "clusters/identify.h"
+#include "indication.h"
 #include "nfc.h"
 
 #include "app/matter_init.h"
@@ -17,7 +18,9 @@
 #include <platform/CHIPDeviceLayer.h>
 #include <setup_payload/OnboardingCodesUtil.h>
 
+#include <dk_buttons_and_leds.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
@@ -53,19 +56,36 @@ void AppFactoryResetHandler(const ChipDeviceEvent *event, intptr_t /* unused */)
 #endif
 
 Nrf::Matter::IdentifyCluster sIdentifyCluster(kLockEndpointId, false, []() {
-	Nrf::PostTask([] { Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(BoltLockMgr().IsLocked()); });
+	Nrf::PostTask([] { Indication::IdentifyDone(); });
 });
 } /* namespace */
 
 void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
 {
+	/*
+	 * Program button. The board layer owns its functions (advertising, DFU,
+	 * factory reset); this only adds the on-demand connectivity flash for a
+	 * short press on a commissioned lock. Longer holds are the factory-reset
+	 * sequence and already blink every LED.
+	 */
+	static int64_t pressedAt;
+
+	if (hasChanged & DK_BTN1_MSK) {
+		if (state & DK_BTN1_MSK) {
+			pressedAt = k_uptime_get();
+		} else if (k_uptime_get() - pressedAt < Nrf::FactoryResetConsts::kFactoryResetTriggerTimeout) {
+			Nrf::PostTask([] {
+				if (chip::DeviceLayer::ConnectivityMgr().IsThreadProvisioned()) {
+					Indication::ButtonTap(chip::DeviceLayer::ConnectivityMgr().IsThreadAttached());
+				}
+			});
+		}
+	}
+
 #ifdef APPLICATION_BUTTON_MASK
 	if ((APPLICATION_BUTTON_MASK & hasChanged) & state) {
 		Nrf::PostTask([] { LockActionEventHandler(); });
 	}
-#else
-	ARG_UNUSED(state);
-	ARG_UNUSED(hasChanged);
 #endif
 }
 
@@ -83,19 +103,19 @@ void AppTask::LockStateChanged(const BoltLockManager::StateData &stateData)
 	switch (stateData.mState) {
 	case BoltLockManager::State::kLockingInitiated:
 		LOG_INF("Lock action initiated");
-		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Blink(50, 50);
+		Indication::LockOperationStarted(true);
 		break;
 	case BoltLockManager::State::kLockingCompleted:
 		LOG_INF("Lock action completed");
-		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(true);
+		Indication::LockOperationCompleted(true);
 		break;
 	case BoltLockManager::State::kUnlockingInitiated:
 		LOG_INF("Unlock action initiated");
-		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Blink(50, 50);
+		Indication::LockOperationStarted(false);
 		break;
 	case BoltLockManager::State::kUnlockingCompleted:
 		LOG_INF("Unlock action completed");
-		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(false);
+		Indication::LockOperationCompleted(false);
 		break;
 	}
 
@@ -178,6 +198,8 @@ void AppTask::UpdateClusterStateHandler(const BoltLockManager::StateData &stateD
 
 void AppTask::ReportLockJammed()
 {
+	Indication::LockJammed();
+
 	CHIP_ERROR err = SystemLayer().ScheduleLambda([]() {
 		if (!DoorLockServer::Instance().SendLockAlarmEvent(kLockEndpointId, AlarmCodeEnum::kLockJammed)) {
 			LOG_ERR("Failed to send LockJammed alarm event");
@@ -204,13 +226,12 @@ CHIP_ERROR AppTask::Init()
 	/* Initialize Matter stack */
 	ReturnErrorOnFailure(Nrf::Matter::PrepareServer());
 
-	if (!Nrf::GetBoard().Init(ButtonEventHandler)) {
+	if (!Nrf::GetBoard().Init(ButtonEventHandler, Indication::StatusLedHandler)) {
 		LOG_ERR("User interface initialization failed.");
 		return CHIP_ERROR_INCORRECT_STATE;
 	}
 
-	/* Register Matter event handler that controls the connectivity status LED based on the captured Matter network
-	 * state. */
+	/* Register Matter event handler that tracks the network state for the connection LED (see indication.h). */
 	ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(Nrf::Board::DefaultMatterEventHandler, 0));
 
 #ifndef CONFIG_CHIP_FACTORY_RESET_ERASE_SETTINGS

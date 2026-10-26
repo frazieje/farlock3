@@ -20,16 +20,22 @@ enum lock_hw_direction {
 	LOCK_HW_DIR_RIGHT = 1,
 };
 
-/**
- * Called from the system work queue, after debouncing, whenever the bolt
- * position switch changes state.
- *
- * @param position_active true when the position switch is closed.
- */
-typedef void (*lock_hw_position_cb_t)(bool position_active);
+enum lock_hw_switch {
+	LOCK_HW_SW_POSITION, /* bolt position, follows the thumb-turn and the motor */
+	LOCK_HW_SW_DIRECTION, /* handedness, set once by the installer but may be flipped any time */
+};
 
-/** Configure the motor outputs (off) and switch inputs, arm the position interrupt. */
-int lock_hw_init(lock_hw_position_cb_t position_cb);
+/**
+ * Called from the system work queue, after debouncing, whenever one of the
+ * switches changes state.
+ *
+ * @param sw which switch changed.
+ * @param active true when that switch now reads active.
+ */
+typedef void (*lock_hw_switch_cb_t)(enum lock_hw_switch sw, bool active);
+
+/** Configure the motor outputs (off) and switch inputs, arm both switch interrupts. */
+int lock_hw_init(lock_hw_switch_cb_t switch_cb);
 
 /** Raw state of the bolt position switch. */
 bool lock_hw_position_active(void);

@@ -29,57 +29,105 @@ static const struct gpio_dt_spec motor_in1 = GPIO_DT_SPEC_GET(MOTOR_NODE, in1_gp
 static const struct gpio_dt_spec motor_in2 = GPIO_DT_SPEC_GET(MOTOR_NODE, in2_gpios);
 static const struct gpio_dt_spec motor_stby = GPIO_DT_SPEC_GET(MOTOR_NODE, stby_gpios);
 
-static const struct gpio_dt_spec sw_position = GPIO_DT_SPEC_GET(SWITCHES_NODE, position_gpios);
-static const struct gpio_dt_spec sw_direction = GPIO_DT_SPEC_GET(SWITCHES_NODE, direction_gpios);
+/*
+ * The switches are sensed with level interrupts rather than edge interrupts.
+ * On nRF52 an edge interrupt occupies a GPIOTE channel in event mode, which
+ * keeps a high-frequency clock request alive and costs tens of microamps
+ * forever. A level interrupt uses the PORT/SENSE mechanism, which is free. The
+ * price is that we must re-arm with the opposite level each time.
+ */
+struct switch_input {
+	const struct gpio_dt_spec spec;
+	const char *name;
+	enum lock_hw_switch id;
+	struct gpio_callback cb_data;
+	struct k_work_delayable work;
+	bool last;
+};
 
-static struct gpio_callback position_cb_data;
-static struct k_work_delayable position_work;
-static lock_hw_position_cb_t position_cb;
-static bool last_position;
+static struct switch_input sw_position = {
+	.spec = GPIO_DT_SPEC_GET(SWITCHES_NODE, position_gpios),
+	.name = "position",
+	.id = LOCK_HW_SW_POSITION,
+};
+static struct switch_input sw_direction = {
+	.spec = GPIO_DT_SPEC_GET(SWITCHES_NODE, direction_gpios),
+	.name = "direction",
+	.id = LOCK_HW_SW_DIRECTION,
+};
+
+static lock_hw_switch_cb_t switch_cb;
 static bool motor_running;
 
-/*
- * The position switch is sensed with level interrupts rather than edge
- * interrupts. On nRF52 an edge interrupt occupies a GPIOTE channel in event
- * mode, which keeps a high-frequency clock request alive and costs tens of
- * microamps forever. A level interrupt uses the PORT/SENSE mechanism, which is
- * free. The price is that we must re-arm with the opposite level each time.
- */
-static int arm_position_interrupt(bool currently_active)
+static int arm_switch_interrupt(struct switch_input *sw, bool currently_active)
 {
-	return gpio_pin_interrupt_configure_dt(&sw_position, currently_active ? GPIO_INT_LEVEL_INACTIVE :
-										GPIO_INT_LEVEL_ACTIVE);
+	return gpio_pin_interrupt_configure_dt(&sw->spec,
+					       currently_active ? GPIO_INT_LEVEL_INACTIVE : GPIO_INT_LEVEL_ACTIVE);
 }
 
-static void position_work_fn(struct k_work *work)
+static void switch_work_fn(struct k_work *work)
 {
-	ARG_UNUSED(work);
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct switch_input *sw = CONTAINER_OF(dwork, struct switch_input, work);
 
-	bool now = gpio_pin_get_dt(&sw_position) > 0;
+	bool now = gpio_pin_get_dt(&sw->spec) > 0;
 
-	if (now != last_position) {
-		last_position = now;
-		LOG_INF("Position switch %s", now ? "active" : "inactive");
-		if (position_cb) {
-			position_cb(now);
+	if (now != sw->last) {
+		sw->last = now;
+		LOG_INF("%s switch %s", sw->name, now ? "active" : "inactive");
+		if (switch_cb) {
+			switch_cb(sw->id, now);
 		}
 	}
 
-	int err = arm_position_interrupt(now);
+	int err = arm_switch_interrupt(sw, now);
 	if (err) {
-		LOG_ERR("Failed to re-arm position interrupt (%d)", err);
+		LOG_ERR("Failed to re-arm %s interrupt (%d)", sw->name, err);
 	}
 }
 
-static void position_isr(const struct device *port, struct gpio_callback *cb, gpio_port_pins_t pins)
+static void switch_isr(const struct device *port, struct gpio_callback *cb, gpio_port_pins_t pins)
 {
+	struct switch_input *sw = CONTAINER_OF(cb, struct switch_input, cb_data);
+
 	ARG_UNUSED(port);
-	ARG_UNUSED(cb);
 	ARG_UNUSED(pins);
 
 	/* Level interrupts fire continuously; mask until the debounce work has run. */
-	(void)gpio_pin_interrupt_configure_dt(&sw_position, GPIO_INT_DISABLE);
-	k_work_reschedule(&position_work, K_MSEC(CONFIG_FARLOCK3_SWITCH_DEBOUNCE_MS));
+	(void)gpio_pin_interrupt_configure_dt(&sw->spec, GPIO_INT_DISABLE);
+	k_work_reschedule(&sw->work, K_MSEC(CONFIG_FARLOCK3_SWITCH_DEBOUNCE_MS));
+}
+
+static int switch_init(struct switch_input *sw)
+{
+	int err;
+
+	if (!gpio_is_ready_dt(&sw->spec)) {
+		LOG_ERR("%s switch GPIO port not ready", sw->name);
+		return -ENODEV;
+	}
+
+	err = gpio_pin_configure_dt(&sw->spec, GPIO_INPUT);
+	if (err) {
+		LOG_ERR("Failed to configure %s switch (%d)", sw->name, err);
+		return err;
+	}
+
+	sw->last = gpio_pin_get_dt(&sw->spec) > 0;
+
+	k_work_init_delayable(&sw->work, switch_work_fn);
+	gpio_init_callback(&sw->cb_data, switch_isr, BIT(sw->spec.pin));
+	err = gpio_add_callback(sw->spec.port, &sw->cb_data);
+	if (err) {
+		LOG_ERR("Failed to add %s switch callback (%d)", sw->name, err);
+		return err;
+	}
+
+	err = arm_switch_interrupt(sw, sw->last);
+	if (err) {
+		LOG_ERR("Failed to arm %s switch interrupt (%d)", sw->name, err);
+	}
+	return err;
 }
 
 static int configure_output(const struct gpio_dt_spec *spec, const char *name)
@@ -96,21 +144,7 @@ static int configure_output(const struct gpio_dt_spec *spec, const char *name)
 	return err;
 }
 
-static int configure_input(const struct gpio_dt_spec *spec, const char *name)
-{
-	if (!gpio_is_ready_dt(spec)) {
-		LOG_ERR("%s GPIO port not ready", name);
-		return -ENODEV;
-	}
-
-	int err = gpio_pin_configure_dt(spec, GPIO_INPUT);
-	if (err) {
-		LOG_ERR("Failed to configure %s (%d)", name, err);
-	}
-	return err;
-}
-
-int lock_hw_init(lock_hw_position_cb_t cb)
+int lock_hw_init(lock_hw_switch_cb_t cb)
 {
 	int err;
 
@@ -127,30 +161,15 @@ int lock_hw_init(lock_hw_position_cb_t cb)
 		return err;
 	}
 
-	err = configure_input(&sw_position, "position switch");
-	err = err ? err : configure_input(&sw_direction, "direction switch");
+	switch_cb = cb;
+
+	err = switch_init(&sw_position);
+	err = err ? err : switch_init(&sw_direction);
 	if (err) {
 		return err;
 	}
 
-	position_cb = cb;
-	last_position = gpio_pin_get_dt(&sw_position) > 0;
-
-	k_work_init_delayable(&position_work, position_work_fn);
-	gpio_init_callback(&position_cb_data, position_isr, BIT(sw_position.pin));
-	err = gpio_add_callback(sw_position.port, &position_cb_data);
-	if (err) {
-		LOG_ERR("Failed to add position callback (%d)", err);
-		return err;
-	}
-
-	err = arm_position_interrupt(last_position);
-	if (err) {
-		LOG_ERR("Failed to arm position interrupt (%d)", err);
-		return err;
-	}
-
-	LOG_INF("Lock hardware ready: position %s, direction %s, bolt %s", last_position ? "active" : "inactive",
+	LOG_INF("Lock hardware ready: position %s, direction %s, bolt %s", sw_position.last ? "active" : "inactive",
 		lock_hw_lock_direction() == LOCK_HW_DIR_RIGHT ? "right" : "left",
 		lock_hw_is_locked() ? "locked" : "unlocked");
 
@@ -159,12 +178,12 @@ int lock_hw_init(lock_hw_position_cb_t cb)
 
 bool lock_hw_position_active(void)
 {
-	return gpio_pin_get_dt(&sw_position) > 0;
+	return gpio_pin_get_dt(&sw_position.spec) > 0;
 }
 
 enum lock_hw_direction lock_hw_lock_direction(void)
 {
-	return gpio_pin_get_dt(&sw_direction) > 0 ? LOCK_HW_DIR_RIGHT : LOCK_HW_DIR_LEFT;
+	return gpio_pin_get_dt(&sw_direction.spec) > 0 ? LOCK_HW_DIR_RIGHT : LOCK_HW_DIR_LEFT;
 }
 
 enum lock_hw_direction lock_hw_opposite(enum lock_hw_direction dir)

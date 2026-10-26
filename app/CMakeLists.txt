@@ -32,6 +32,7 @@ target_sources(app PRIVATE
   src/main.cpp
   src/app_task.cpp
   src/bolt_lock_manager.cpp
+  src/indication.cpp
   src/zcl_callbacks.cpp
   src/nfc.c
   src/ndef_storage.c

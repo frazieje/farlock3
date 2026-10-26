@@ -7,6 +7,7 @@
 #pragma once
 
 #include "access/access_manager.h"
+#include "lock_hw.h"
 
 #include <app/clusters/door-lock-server/door-lock-server.h>
 #include <lib/core/ClusterEnums.h>
@@ -115,10 +116,14 @@ private:
 	void HandleActuatorTimeout();
 	/* The position switch changed, either because the motor got there or because someone turned the thumb-turn. */
 	void HandlePositionChanged();
+	/* The handedness switch was flipped: the same bolt position now means the opposite lock state. */
+	void HandleDirectionChanged();
+	/* Not actuating: report whatever state the switches describe, as a manual operation if it differs. */
+	void SyncStateFromSwitches(const char *why);
 
 	static void ActuatorTimerEventHandler(k_timer *timer);
 	static void ActuatorAppEventHandler(const BoltLockManagerEvent &event);
-	static void PositionChangedHandler(bool positionActive);
+	static void SwitchChangedHandler(enum lock_hw_switch sw, bool active);
 	friend BoltLockManager &BoltLockMgr();
 
 	StateData mStateData = { State::kLockingCompleted, OperationSource::kButton, {}, {}, {} };

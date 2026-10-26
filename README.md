@@ -178,13 +178,51 @@ The build also produces the Matter OTA image (`build-*/matter.ota`) for an
 OTA provider on the fabric. This path needs the device commissioned on
 Thread first.
 
+## LEDs
+
+The lock runs on a battery, so no LED is lit in steady state. Every pattern
+is started by an event and ends by itself (`app/src/indication.h`):
+
+| Event | LED | Pattern |
+|---|---|---|
+| Locked (motor, thumb-turn or key) | green | one 1 s flash |
+| Unlocked | red | one 1 s flash |
+| Motor running | target colour | fast blink until the bolt arrives |
+| Jam | red and green | alternate five times |
+| NFC tag read by a phone | green | one short flash |
+| Commissioning advertising (after a button tap) | connection | short blink once a second, 15 min in release builds |
+| Phone connected over Bluetooth LE | connection | fast blink |
+| Joined Thread (also at every boot once commissioned) | connection | three quick flashes |
+| Button tap on a commissioned lock | connection | one flash if on Thread, three if not |
+| Factory reset armed (button held 3 s) | all | 500 ms blink; release to cancel, hold 3 s more to reset |
+| Matter Identify | green | blink for the identify time |
+
 ## Commissioning
 
 The device uses the Matter test vendor ID and the example lock product ID
 (0x8006) with test attestation data generated at build time. Home Assistant's
 Matter server accepts test devices. The QR code and manual pairing code are
-printed on the console at boot. Hold the program button for more than 3 s to
-factory reset.
+printed on the console at boot (`factory_data.png` in the build directory
+has the QR code). A short press of the program button starts the
+commissioning advertisement; hold it for more than 3 s to factory reset.
+
+### Radio range
+
+The lock transmits at +8 dBm, the nRF52840 maximum (`OPENTHREAD_DEFAULT_TX_POWER`
+in `app/Kconfig`). A steel door and a couple of walls cost 20-30 dB, so check
+the link from the border router after installation:
+
+```
+ot-ctl neighbor linkquality
+```
+
+An average RSS better than -75 dBm and a frame error rate under 5 % is a solid
+link. If the border router's own radio is at 0 dBm (`ot-ctl txpower`), raising
+it to 8 helps the direction that column measures. Thread channels 15, 20, 25
+sit between the Wi-Fi channels 1/6/11; channel 25 is the usual choice when all
+three Wi-Fi channels are in use nearby. Beyond that, a mains-powered Thread
+router between the border router and the door turns one long hop into two
+short ones.
 
 ## Licence
 

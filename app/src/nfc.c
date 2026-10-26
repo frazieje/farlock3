@@ -5,6 +5,7 @@
  */
 
 #include "nfc.h"
+#include "indication.h"
 #include "ndef_storage.h"
 
 #include <string.h>
@@ -69,6 +70,7 @@ static void nfc_callback(void *context, nfc_t4t_event_t event, const uint8_t *da
 		break;
 	case NFC_T4T_EVENT_NDEF_READ:
 		LOG_INF("NDEF message read by a reader");
+		indication_nfc_tap();
 		break;
 	case NFC_T4T_EVENT_NDEF_UPDATED:
 		/* data_length is the new NLEN; 0 means the reader is mid-update (NLEN cleared). */
