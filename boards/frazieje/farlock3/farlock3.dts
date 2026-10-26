@@ -74,8 +74,12 @@
 		compatible = "frazieje,lock-switches";
 		/* Bolt position switch, J5 pin 2, 10 k external pull-up (R4) */
 		position-gpios = <&gpio0 25 GPIO_ACTIVE_LOW>;
-		/* On-board SPDT handedness switch SW1, 10 k external pull-up (R7) */
-		direction-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
+		/*
+		 * On-board SPDT handedness switch SW1, 10 k external pull-up (R7).
+		 * The v02 switch is mounted the opposite way round from the v2 board:
+		 * the open position (pin high) is the right-handed installation.
+		 */
+		direction-gpios = <&gpio0 24 GPIO_ACTIVE_HIGH>;
 	};
 
 	motor: motor {
@@ -92,6 +96,9 @@
 		led2 = &led2;
 		led3 = &led3;
 		sw0 = &button0;
+		/* MCUboot: hold this button at power-up for USB serial recovery; this LED is on while in it */
+		mcuboot-button0 = &button0;
+		mcuboot-led0 = &led0;
 		pwm-motor = &motor;
 		watchdog0 = &wdt0;
 	};

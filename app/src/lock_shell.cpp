@@ -10,6 +10,11 @@
 
 #include <zephyr/shell/shell.h>
 
+#ifdef CONFIG_RETENTION_BOOT_MODE
+#include <zephyr/retention/bootmode.h>
+#include <zephyr/sys/reboot.h>
+#endif
+
 #ifndef CONFIG_FARLOCK3_LOCK_SIMULATED
 #include "lock_hw.h"
 #endif
@@ -73,6 +78,22 @@ int CmdStatus(const struct shell *sh, size_t, char **)
 #endif
 	return 0;
 }
+
+#ifdef CONFIG_RETENTION_BOOT_MODE
+int CmdDfu(const struct shell *sh, size_t, char **)
+{
+	int err = bootmode_set(BOOT_MODE_TYPE_BOOTLOADER);
+
+	if (err) {
+		shell_error(sh, "bootmode_set failed: %d", err);
+		return err;
+	}
+	shell_print(sh, "Rebooting into MCUboot USB serial recovery (this console goes away)");
+	k_sleep(K_MSEC(100));
+	sys_reboot(SYS_REBOOT_WARM);
+	return 0;
+}
+#endif
 } /* namespace */
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_farlock,
@@ -80,6 +101,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_farlock,
 			       SHELL_CMD(unlock, NULL, "Drive the bolt to the unlocked position", CmdUnlock),
 			       SHELL_CMD(toggle, NULL, "Lock if unlocked, unlock if locked", CmdToggle),
 			       SHELL_CMD(status, NULL, "Show bolt, switch and motor state", CmdStatus),
+#ifdef CONFIG_RETENTION_BOOT_MODE
+			       SHELL_CMD(dfu, NULL, "Reboot into MCUboot USB serial recovery", CmdDfu),
+#endif
 			       SHELL_SUBCMD_SET_END);
 
 SHELL_CMD_REGISTER(farlock, &sub_farlock, "FARLock bolt bench commands", NULL);

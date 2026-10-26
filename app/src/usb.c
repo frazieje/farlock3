@@ -203,7 +203,7 @@ static struct usbd_context *farlock3_usbd_init_device(usbd_msg_cb_t msg_cb)
 }
 
 static void usbd_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *const msg) {
-    LOG_INF("USBD message: %s", usbd_msg_type_string(msg->type));
+    LOG_DBG("USBD message: %s", usbd_msg_type_string(msg->type));
 
     if (usbd_can_detect_vbus(ctx)) {
         if (msg->type == USBD_MSG_VBUS_READY) {

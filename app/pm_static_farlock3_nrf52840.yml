@@ -1,27 +1,32 @@
+# FARLock v3 (nRF52840, 1 MB internal flash, 8 MB MX25R64 QSPI flash)
+#
+# MCUboot carries a USB CDC ACM serial-recovery mode, so it needs 64 KB. The
+# secondary slot lives in external flash and must stay the same size as the
+# primary slot. Changing this map requires one SWD flash of the whole image.
 mcuboot:
   address: 0x0
-  size: 0x7000
+  size: 0x10000
   region: flash_primary
 mcuboot_pad:
-  address: 0x7000
+  address: 0x10000
   size: 0x200
 app:
-  address: 0x7200
-  size: 0xefe00
+  address: 0x10200
+  size: 0xe6e00
 mcuboot_primary:
   orig_span: &id001
   - mcuboot_pad
   - app
   span: *id001
-  address: 0x7000
-  size: 0xf0000
+  address: 0x10000
+  size: 0xe7000
   region: flash_primary
 mcuboot_primary_app:
   orig_span: &id002
   - app
   span: *id002
-  address: 0x7200
-  size: 0xefe00
+  address: 0x10200
+  size: 0xe6e00
 factory_data:
   address: 0xf7000
   size: 0x1000
@@ -32,11 +37,11 @@ settings_storage:
   region: flash_primary
 mcuboot_secondary:
   address: 0x0
-  size: 0xf0000
+  size: 0xe7000
   device: MX25R64
   region: external_flash
 external_flash:
-  address: 0xf0000
-  size: 0x710000
+  address: 0xe7000
+  size: 0x719000
   device: MX25R64
   region: external_flash

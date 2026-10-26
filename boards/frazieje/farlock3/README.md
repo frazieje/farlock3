@@ -14,9 +14,9 @@
 | Access granted LED | P0.15 | J5, active low |
 | Access denied LED | P0.16 | J5, active low |
 | Debug LED (blue, on-board) | P0.13 | active low |
-| Program button | P0.12 | 10 k pull-up, also J6 |
+| Program button | P0.12 | 10 k pull-up, also J6; `mcuboot-button0`: hold at power-up for USB serial recovery |
 | Bolt position switch | P0.25 | J5 pin 2, 10 k pull-up, closed = GND |
-| Handedness switch (SW1) | P0.24 | 10 k pull-up, closed = GND |
+| Handedness switch (SW1) | P0.24 | 10 k pull-up, closed = GND = left-handed, open = right-handed |
 | QSPI flash (MX25R6435F) | P0.17, P0.19 to P0.23 | same as nRF52840 DK |
 | NFC antenna | P0.09 / P0.10 | J4 |
 | USB | D+/D- | console (CDC ACM), power |
