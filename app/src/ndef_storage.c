@@ -1,91 +1,94 @@
-#include "ndef_storage.h"
-#include <stddef.h>
-#include <zephyr/settings/settings.h>
+/*
+ * Persistent storage for the NFC NDEF file, backed by the Zephyr settings
+ * subsystem.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-#define NDEF_KEY "farlock3/ndef"
-#define NDEF_MAX_SIZE 2048
+#include "ndef_storage.h"
+
+#include <errno.h>
+#include <string.h>
+
+#include <zephyr/settings/settings.h>
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_REGISTER(ndef_storage, CONFIG_CHIP_APP_LOG_LEVEL);
+
+#define NDEF_SUBTREE "farlock3"
+#define NDEF_KEY NDEF_SUBTREE "/ndef"
+#define NDEF_MAX_SIZE CONFIG_NDEF_FILE_SIZE
 
 static uint8_t ndef_buffer[NDEF_MAX_SIZE];
 static size_t ndef_len;
 
-/* Handler called by settings subsystem during load */
-static int ndef_settings_set(const char *key, size_t len,
-                              settings_read_cb read_cb, void *cb_arg)
+/* Called by the settings subsystem for every key under NDEF_SUBTREE during load. */
+static int ndef_settings_set(const char *key, size_t len, settings_read_cb read_cb, void *cb_arg)
 {
-    /* `key` is the part of the full key after our subtree prefix.
-     * Since we register the handler for "farlock3" subtree and our key
-     * is "farlock3/ndef", the key passed here will be just "ndef". */
-    
-    if (strcmp(key, "ndef") != 0) {
-        return -ENOENT;
-    }
-    
-    if (len > NDEF_MAX_SIZE) {
-        return -EINVAL;
-    }
-    
-    ssize_t bytes = read_cb(cb_arg, ndef_buffer, len);
-    if (bytes < 0) {
-        return bytes;
-    }
-    
-    ndef_len = bytes;
-    return 0;
+	const char *next;
+
+	if (!settings_name_steq(key, "ndef", &next) || next) {
+		return -ENOENT;
+	}
+
+	if (len > NDEF_MAX_SIZE) {
+		LOG_ERR("Stored NDEF file too large (%u)", (unsigned int)len);
+		return -EINVAL;
+	}
+
+	ssize_t bytes = read_cb(cb_arg, ndef_buffer, len);
+	if (bytes < 0) {
+		return (int)bytes;
+	}
+
+	ndef_len = (size_t)bytes;
+	return 0;
 }
 
-/* Register the handler at file scope */
-SETTINGS_STATIC_HANDLER_DEFINE(farlock3_ndef, "farlock3",
-                                NULL,                /* get handler, not needed */
-                                ndef_settings_set,   /* set handler, called on load */
-                                NULL,                /* commit handler, not needed */
-                                NULL);               /* export handler, not needed */
+SETTINGS_STATIC_HANDLER_DEFINE(farlock3_ndef, NDEF_SUBTREE, NULL, ndef_settings_set, NULL, NULL);
 
-int ndef_storage_init() {
-    int err;
-    
-    err = settings_subsys_init();
-    if (err) {
-        return err;
-    }
-    
-    /* This loads all stored settings under "farlock3" and dispatches them
-     * to our registered handler. */
-    err = settings_load_subtree("farlock3");
-    if (err) {
-        return err;
-    }
-    
-    /* After this returns, ndef_buffer and ndef_len contain the
-     * previously-stored content (or zero/empty if nothing was stored yet). */
-    return 0;
+int ndef_storage_init(void)
+{
+	int err = settings_subsys_init();
+
+	if (err) {
+		LOG_ERR("settings_subsys_init failed (%d)", err);
+		return err;
+	}
+
+	err = settings_load_subtree(NDEF_SUBTREE);
+	if (err) {
+		LOG_ERR("settings_load_subtree failed (%d)", err);
+		return err;
+	}
+
+	return 0;
 }
 
-int ndef_storage_write(const void *data, size_t data_size) { 
+int ndef_storage_write(const void *data, size_t data_size)
+{
+	if (data == NULL) {
+		return -EINVAL;
+	}
 
-    if (data == NULL) {
-        return -1;
-    }
+	if (data_size > NDEF_MAX_SIZE) {
+		return -EINVAL;
+	}
 
-    if (data_size > NDEF_MAX_SIZE) {
-        return -EINVAL;
-    }
-    
-    /* Copy into our buffer first */
-    memcpy(ndef_buffer, data, data_size);
-    ndef_len = data_size;
-    
-    /* Then persist */
-    return settings_save_one(NDEF_KEY, ndef_buffer, ndef_len);
+	memcpy(ndef_buffer, data, data_size);
+	ndef_len = data_size;
+
+	return settings_save_one(NDEF_KEY, ndef_buffer, ndef_len);
 }
 
-int ndef_storage_read(const void **data, size_t *size_t data_size) {
+int ndef_storage_read(const void **data, size_t *data_size)
+{
+	if (data == NULL || data_size == NULL) {
+		return -EINVAL;
+	}
 
-    if (data == NULL || len == NULL) {
-        return -EINVAL;
-    }
+	*data = ndef_buffer;
+	*data_size = ndef_len;
 
-    *data = ndef_buffer;
-    *len = ndef_len;
-
-    return 0;
+	return 0;
 }

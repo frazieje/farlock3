@@ -52,12 +52,14 @@ public:
 
 	using StateChangeCallback = void (*)(const StateData &);
 
-	static constexpr uint32_t kActuatorMovementTimeMs = 2000;
-
 	void Init(StateChangeCallback callback);
 
 	const StateData &GetState() const { return mStateData; }
 	bool IsLocked() const { return mStateData.mState == State::kLockingCompleted; }
+	bool IsActuating() const
+	{
+		return mStateData.mState == State::kLockingInitiated || mStateData.mState == State::kUnlockingInitiated;
+	}
 
 	bool GetUser(uint16_t userIndex, EmberAfPluginDoorLockUserInfo &user);
 	bool SetUser(uint16_t userIndex, chip::FabricIndex creator, chip::FabricIndex modifier,
@@ -107,8 +109,16 @@ private:
 	void SetState(State state);
 	void SetStateData(const StateData &stateData);
 
+	/* Drive the motor towards the locked (lock == true) or unlocked position and arm the timeout. */
+	void StartActuator(bool lock);
+	/* Motor ran for the full timeout without the position switch changing. */
+	void HandleActuatorTimeout();
+	/* The position switch changed, either because the motor got there or because someone turned the thumb-turn. */
+	void HandlePositionChanged();
+
 	static void ActuatorTimerEventHandler(k_timer *timer);
 	static void ActuatorAppEventHandler(const BoltLockManagerEvent &event);
+	static void PositionChangedHandler(bool positionActive);
 	friend BoltLockManager &BoltLockMgr();
 
 	StateData mStateData = { State::kLockingCompleted, OperationSource::kButton, {}, {}, {} };

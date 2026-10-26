@@ -29,19 +29,28 @@ target_include_directories(app PRIVATE
 )
 
 target_sources(app PRIVATE
-	#src/ndef_storage_c.cpp  
-	#src/ndef_storage.cpp  
-	#src/nfc.c
-  src/usb.c
+  src/main.cpp
   src/app_task.cpp
   src/bolt_lock_manager.cpp
-  src/main.cpp
   src/zcl_callbacks.cpp
+  src/nfc.c
+  src/ndef_storage.c
   src/access/access_data_types.cpp
   src/access/access_manager_credentials.cpp
   src/access/access_manager_users.cpp
   src/access/access_manager.cpp
-  #src/ndef_storage.cpp
+)
+
+if(NOT CONFIG_FARLOCK3_LOCK_SIMULATED)
+  target_sources(app PRIVATE src/lock_hw.c)
+endif()
+
+target_sources_ifdef(CONFIG_FARLOCK3_USB_CONSOLE app PRIVATE
+  src/usb.c
+)
+
+target_sources_ifdef(CONFIG_SHELL app PRIVATE
+  src/lock_shell.cpp
 )
 
 target_sources_ifdef(CONFIG_LOCK_ACCESS_STORAGE_PERSISTENT_STORAGE app PRIVATE
@@ -58,10 +67,6 @@ target_sources_ifdef(CONFIG_LOCK_SCHEDULES app PRIVATE
 
 target_sources_ifdef(CONFIG_LOCK_PRINT_STORAGE_STATUS app PRIVATE
   src/access/access_storage_print.cpp
-)
-
-target_sources_ifdef(CONFIG_THREAD_WIFI_SWITCHING app PRIVATE
-  src/thread_wifi_switch.cpp
 )
 
 # Do not treat warnings as errors while the variable may be uninitialized for this sample data model.

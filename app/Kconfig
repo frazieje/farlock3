@@ -4,7 +4,87 @@
 # SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
-mainmenu "Matter Lock sample application"
+mainmenu "FARLock v3 Matter door lock"
+
+menu "FARLock hardware"
+
+config FARLOCK3_LOCK_SIMULATED
+	bool "Simulate the bolt (no motor or switches)"
+	help
+	  Build without the motor driver and switch handling. Lock and unlock
+	  actions complete after a fixed delay. Useful on development kits
+	  without the mechanism attached. When disabled, the board must provide
+	  "frazieje,tb6612-motor" and "frazieje,lock-switches" devicetree nodes.
+
+if !FARLOCK3_LOCK_SIMULATED
+
+config FARLOCK3_MOTOR_TIMEOUT_MS
+	int "Maximum motor run time in milliseconds"
+	default 3000
+	help
+	  The motor is stopped when the bolt position switch changes. If that
+	  has not happened after this many milliseconds the motor is stopped
+	  anyway and a LockJammed alarm is raised.
+
+config FARLOCK3_MOTOR_DUTY_CYCLE
+	int "Motor PWM duty cycle in percent"
+	range 1 100
+	default 100
+
+config FARLOCK3_SWITCH_DEBOUNCE_MS
+	int "Position switch debounce time in milliseconds"
+	default 20
+
+endif # !FARLOCK3_LOCK_SIMULATED
+
+config FARLOCK3_USB_CONSOLE
+	bool "USB CDC ACM console"
+	default y
+	depends on USB_DEVICE_STACK_NEXT && USBD_CDC_ACM_CLASS
+	help
+	  Bring up the USB device stack at boot so that the console and shell
+	  are available over the micro-B port when a host is attached.
+
+if FARLOCK3_USB_CONSOLE
+
+config FARLOCK3_USBD_VID
+	hex "USB vendor ID"
+	default 0x1915
+
+config FARLOCK3_USBD_PID
+	hex "USB product ID"
+	default 0x0004
+
+config FARLOCK3_USBD_MANUFACTURER
+	string "USB manufacturer string"
+	default "frazieje"
+
+config FARLOCK3_USBD_PRODUCT
+	string "USB product string"
+	default "FARLock v3"
+
+config FARLOCK3_USBD_SELF_POWERED
+	bool "USB self-powered attribute"
+	default y
+
+config FARLOCK3_USBD_REMOTE_WAKEUP
+	bool "USB remote wakeup attribute"
+	default n
+
+config FARLOCK3_USBD_MAX_POWER
+	int "USB maximum power in 2 mA units"
+	default 125
+	range 0 250
+
+config FARLOCK3_USBD_20_EXTENSION_DESC
+	bool "Use default USB 2.0 Extension Descriptor"
+	depends on USBD_BOS_SUPPORT
+
+endif # FARLOCK3_USB_CONSOLE
+
+endmenu
+
+menu "Door lock cluster"
 
 config LOCK_MAX_NUM_USERS
 	int "Maximum number of users supported by the lock"
@@ -79,70 +159,6 @@ config SHELL_CMD_BUFF_SIZE
 
 endif
 
-config STATE_LEDS
-	bool "Use LEDs to indicate the device state"
-	default y
-	help
-	  Use LEDs to render the current state of the device such as the progress of commissioning of
-	  the device into a network or the factory reset initiation. Note that setting this option to
-	  'n' does not disable the LED indicating the state of the simulated bolt.
-
-config THREAD_WIFI_SWITCHING
-	bool "Switching between Thread and Wi-Fi"
-	depends on SOC_SERIES_NRF53 || SOC_SERIES_NRF54L
-	depends on NET_L2_OPENTHREAD
-	depends on CHIP_WIFI
-	depends on !CHIP_FACTORY_RESET_ERASE_SETTINGS
-	select EXPERIMENTAL
-	help
-	  Build the application with both Thread and Wi-Fi support and initialize
-	  either transport based on the current configuration. A user can switch
-	  between Thread and Wi-Fi by pressing and holding Button 3 for more than
-	  10 seconds. During the switching, the device is automatically factory
-	  reset and rebooted.
-
-if THREAD_WIFI_SWITCHING
-
-config THREAD_WIFI_SWITCHING_SHELL
-	bool "Shell command for switching between Thread and Wi-Fi"
-	default y if SHELL
-	help
-	  Add "switch_transport" shell command that initiates switching between
-	  Thread and Wi-Fi transport for Matter protocol stack.
-
-endif # THREAD_WIFI_SWITCHING
-
-# Sample configuration used for Thread networking
-if OPENTHREAD
-
-choice OPENTHREAD_NORDIC_LIBRARY_CONFIGURATION
-	default OPENTHREAD_NORDIC_LIBRARY_MTD
-endchoice
-
-choice OPENTHREAD_DEVICE_TYPE
-	default OPENTHREAD_MTD
-endchoice
-
-config CHIP_ENABLE_ICD_SUPPORT
-	default y
-
-# Reduce Thread TX output power to 0 dBm for SED device
-config OPENTHREAD_DEFAULT_TX_POWER
-	default 0
-
-endif # OPENTHREAD
-
-if BOARD_NRF7002DK_NRF5340_CPUAPP || SHIELD_NRF7002EK || SHIELD_NRF7002EB2
-
-config CHIP_WIFI
-	default y
-	select DEPRECATED if SOC_SERIES_NRF53
-
-config NRF_WIFI_LOW_POWER
-	default y
-
-endif # BOARD_NRF7002DK_NRF5340_CPUAPP || SHIELD_NRF7002EK || SHIELD_NRF7002EB2
-
 choice LOCK_ACCESS_STORAGE_CHOICE
 	prompt "Access storage implementation"
 	default LOCK_ACCESS_STORAGE_PROTECTED_STORAGE
@@ -192,54 +208,35 @@ config LOCK_ACCESS_STORAGE_PROTECTED_STORAGE_UID_OFFSET
 
 endif # LOCK_ACCESS_STORAGE_PROTECTED_STORAGE
 
-config FARLOCK3_USBD_VID
-	hex "FARLock3 USB VID"
-	default 0x1915
-	help
-	  USB Vendor ID for the FARLock3 device.
+endmenu
 
-config FARLOCK3_USBD_PID
-	hex "FARLock3 USB PID"
-	default 0x0004
-	help
-	  USB Product ID for the FARLock3 device.
-
-config FARLOCK3_USBD_MANUFACTURER
-	string "USB device manufacturer string"
-	default "frazieje"
-	help
-	  Manufacturer string descriptor.
-
-config FARLOCK3_USBD_PRODUCT
-	string "USB device product string"
-	default "FARLock v3"
-	help
-	  Product string descriptor.
-
-config FARLOCK3_USBD_SELF_POWERED
-	bool "USB self-powered attribute"
+config STATE_LEDS
+	bool "Use LEDs to indicate the device state"
 	default y
 	help
-	  Set the self-powered attribute in the configuration descriptor.
+	  Use LEDs to render the current state of the device such as the progress of commissioning of
+	  the device into a network or the factory reset initiation. Note that setting this option to
+	  'n' does not disable the LED indicating the state of the simulated bolt.
 
-config FARLOCK3_USBD_REMOTE_WAKEUP
-	bool "USB remote wakeup attribute"
-	default n
-	help
-	  Set the remote wakeup attribute
+# Thread networking: sleepy end device
+if OPENTHREAD
 
-config FARLOCK3_USBD_MAX_POWER
-	int "USB device maximum power"
-	default 125
-	range 0 250
-	help
-	  Maximum power in 2 mA units
+choice OPENTHREAD_NORDIC_LIBRARY_CONFIGURATION
+	default OPENTHREAD_NORDIC_LIBRARY_MTD
+endchoice
 
-config FARLOCK3_USBD_20_EXTENSION_DESC
-	bool "Use default USB 2.0 Extension Descriptor"
-	depends on USBD_BOS_SUPPORT
-	help
-	  Set bcdUSB value to 0201 and use default USB 2.0 Extension Descriptor
+choice OPENTHREAD_DEVICE_TYPE
+	default OPENTHREAD_MTD
+endchoice
+
+config CHIP_ENABLE_ICD_SUPPORT
+	default y
+
+# Reduce Thread TX output power to 0 dBm for SED device
+config OPENTHREAD_DEFAULT_TX_POWER
+	default 0
+
+endif # OPENTHREAD
 
 source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.features"
 source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.defaults"

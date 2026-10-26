@@ -7,17 +7,9 @@ CONFIG_HW_STACK_PROTECTION=y
 # Enable GPIO
 CONFIG_GPIO=y
 
-# Enable uart driver
+# Console is the USB CDC ACM instance (zephyr,console in the DTS). The USB
+# device stack itself is enabled by the application, so images that do not
+# want a console (MCUboot) simply leave it off.
 CONFIG_SERIAL=y
-
-# Enable console
 CONFIG_CONSOLE=y
 CONFIG_UART_CONSOLE=y
-CONFIG_UART_LINE_CTRL=y
-CONFIG_UART_INTERRUPT_DRIVEN=y
-
-# Enable USB
-CONFIG_USB_DEVICE_STACK_NEXT=y
-CONFIG_USBD_CDC_ACM_CLASS=y
-CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT=n
-

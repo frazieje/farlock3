@@ -13,10 +13,6 @@
 struct k_timer;
 struct Identify;
 
-#ifdef CONFIG_THREAD_WIFI_SWITCHING
-enum class SwitchButtonAction : uint8_t { Pressed, Released };
-#endif
-
 #ifdef CONFIG_NCS_SAMPLE_MATTER_TEST_EVENT_TRIGGERS
 #include "event_triggers/event_triggers.h"
 #endif
@@ -33,6 +29,9 @@ public:
 
 	void UpdateClusterState(const BoltLockManager::StateData &stateData);
 
+	/** Emit a Door Lock "LockJammed" alarm event. Safe to call from the application thread. */
+	void ReportLockJammed();
+
 private:
 	CHIP_ERROR Init();
 
@@ -40,17 +39,6 @@ private:
 	static void ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged);
 	static void LockStateChanged(const BoltLockManager::StateData &stateData);
 	static void UpdateClusterStateHandler(const BoltLockManager::StateData &stateData);
-
-#ifdef CONFIG_THREAD_WIFI_SWITCHING
-	static void SwitchTransportEventHandler();
-	static void SwitchTransportTimerTimeoutCallback(k_timer *timer);
-	static void SwitchTransportTriggerHandler(const SwitchButtonAction &action);
-#endif
-
-#ifdef CONFIG_CHIP_NUS
-	static void NUSLockCallback(void *context);
-	static void NUSUnlockCallback(void *context);
-#endif
 
 #ifdef CONFIG_NCS_SAMPLE_MATTER_TEST_EVENT_TRIGGERS
 	constexpr static Nrf::Matter::TestEventTrigger::EventTriggerId kDoorLockJammedEventTriggerId =

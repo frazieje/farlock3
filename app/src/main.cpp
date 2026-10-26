@@ -6,9 +6,9 @@
 
 #include "app_task.h"
 
-extern "C" {
+#ifdef CONFIG_FARLOCK3_USB_CONSOLE
 #include "usb.h"
-}
+#endif
 
 #include <zephyr/logging/log.h>
 
@@ -16,15 +16,12 @@ LOG_MODULE_REGISTER(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
 int main()
 {
+#ifdef CONFIG_FARLOCK3_USB_CONSOLE
 	int ret = start_usb();
 	if (ret) {
-	    LOG_INF("USB host not detected, code %d", ret);
+		LOG_INF("USB host not detected (%d), continuing without console", ret);
 	}
-	
-//	ret = start_nfc();
-//	if (ret) {
-//	    LOG_INF("NFC failed to start, code %d", ret);
-//	}
+#endif
 
 	CHIP_ERROR err = AppTask::Instance().StartApp();
 

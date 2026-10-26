@@ -1,65 +1,101 @@
+/*
+ * FARLock v3 board (hardware revision v02)
+ * https://github.com/frazieje/farlock3-hw
+ *
+ * nRF52840 (Raytac MDBT50Q-U1M), TB6612FNG h-bridge, MX25R6435F QSPI flash,
+ * USB micro-B (power + CDC ACM console). No UART pins are broken out.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /dts-v1/;
 #include <nordic/nrf52840_qiaa.dtsi>
 #include <nordic/nrf52840_partition.dtsi>
 #include "farlock3-pinctrl.dtsi"
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
 
 / {
-	model = "FARLock3 Board";
+	model = "FARLock v3";
 	compatible = "frazieje,farlock3";
 
 	chosen {
 		zephyr,console = &cdc_acm_uart0;
 		zephyr,shell-uart = &cdc_acm_uart0;
 		zephyr,uart-mcumgr = &cdc_acm_uart0;
-		zephyr,bt-mon-uart = &cdc_acm_uart0;
-		zephyr,bt-c2h-uart = &cdc_acm_uart0;
 		zephyr,ieee802154 = &ieee802154;
 		zephyr,boot-mode = &boot_mode0;
 		nordic,pm-ext-flash = &mx25r64;
 		zephyr,entropy = &rng;
 	};
 
+	/*
+	 * LED order matters: the NCS Matter board layer uses the first LED as
+	 * the connectivity status LED and the second as the application LED.
+	 * All LEDs are sunk by the GPIO through a series resistor to 3V3.
+	 */
 	leds {
 		compatible = "gpio-leds";
 		led0: led_0 {
-			gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
-			label = "Debug LED";
+			gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
+			label = "Connection LED (J3)";
 		};
 		led1: led_1 {
-			gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
-			label = "Connection State LED";
+			gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
+			label = "Access granted LED (J5)";
 		};
 		led2: led_2 {
-			gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
-			label = "Acess Granted LED";
+			gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
+			label = "Access denied LED (J5)";
 		};
 		led3: led_3 {
-			gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
-			label = "Access Denied LED";
+			gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
+			label = "Debug LED (on-board blue)";
 		};
 	};
 
+	/*
+	 * Only the momentary program button lives here. The bolt position and
+	 * direction switches are deliberately NOT in this node: the dk_buttons
+	 * library polls every 10 ms for as long as any "button" is held, and a
+	 * position switch sits closed for half of its life.
+	 */
 	buttons {
 		compatible = "gpio-keys";
 		button0: button_0 {
-			gpios = <&gpio0 12 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-			label = "Program Button";
+			/* 10 k external pull-up (R5), also on J6 pin 3 */
+			gpios = <&gpio0 12 GPIO_ACTIVE_LOW>;
+			label = "Program button";
 			zephyr,code = <INPUT_KEY_0>;
 		};
-		button1: button_1 {
-			gpios = <&gpio0 25 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-			label = "Lock Position Switch";
-			zephyr,code = <INPUT_KEY_1>;
-		};
-		button2: button_2 {
-			gpios = <&gpio0 24 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-			label = "Lock Direction Switch";
-			zephyr,code = <INPUT_KEY_2>;
-		};
+	};
+
+	lock_switches: lock-switches {
+		compatible = "frazieje,lock-switches";
+		/* Bolt position switch, J5 pin 2, 10 k external pull-up (R4) */
+		position-gpios = <&gpio0 25 GPIO_ACTIVE_LOW>;
+		/* On-board SPDT handedness switch SW1, 10 k external pull-up (R7) */
+		direction-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
+	};
+
+	motor: motor {
+		compatible = "frazieje,tb6612-motor";
+		pwms = <&pwm0 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+		in1-gpios = <&gpio0 29 GPIO_ACTIVE_HIGH>;
+		in2-gpios = <&gpio0 30 GPIO_ACTIVE_HIGH>;
+		stby-gpios = <&gpio0 31 GPIO_ACTIVE_HIGH>;
+	};
+
+	aliases {
+		led0 = &led0;
+		led1 = &led1;
+		led2 = &led2;
+		led3 = &led3;
+		sw0 = &button0;
+		pwm-motor = &motor;
+		watchdog0 = &wdt0;
 	};
 };
-
 
 &reg0 {
 	status = "okay";
@@ -70,6 +106,7 @@
 };
 
 &uicr {
+	/* P0.18 is wired to the RESET pin of the SWD header J2 */
 	gpio-as-nreset;
 };
 
@@ -83,59 +120,23 @@
 
 &gpio0 {
 	status = "okay";
-	gpio-reserved-ranges = <0 2>, <6 1>, <8 3>, <17 7>;
-	gpio-line-names = "XL1", "XL2", "AREF", "A0", "A1", "RTS", "TXD",
-					  "CTS", "RXD", "NFC1", "NFC2", "BUTTON1", "BUTTON2", "LED1",
-					  "LED2", "LED3", "LED4", "QSPI CS", "RESET", "QSPI CLK",
-					  "QSPI DIO0", "QSPI DIO1", "QSPI DIO2", "QSPI DIO3","BUTTON3",
-					  "BUTTON4", "SDA", "SCL", "A2", "A3", "A4", "A5";
+	/* XL1/XL2, NFC1/NFC2, QSPI + RESET */
+	gpio-reserved-ranges = <0 2>, <9 2>, <17 7>;
+	gpio-line-names = "XL1", "XL2", "", "", "", "", "", "",
+			  "", "NFC1", "NFC2", "", "BTN_PRG", "LED_DBG",
+			  "LED_CXN", "LED_ACCG", "LED_ACCD", "QSPI_CS", "RESET", "QSPI_CLK",
+			  "QSPI_IO0", "QSPI_IO1", "QSPI_IO2", "QSPI_IO3", "SW_DIR",
+			  "SW_POS", "", "", "MOTOR_PWM", "MOTOR_IN1", "MOTOR_IN2", "MOTOR_STBY";
 };
 
 &gpio1 {
 	status = "okay";
-	gpio-line-names = "", "D0", "D1", "D2", "D3", "D4", "D5", "D6",
-					  "D7", "", "D8", "D9", "D10", "D11", "D12", "D13";
-};
-
-&uart0 {
-	compatible = "nordic,nrf-uarte";
-	status = "okay";
-	current-speed = <115200>;
-	pinctrl-0 = <&uart0_default>;
-	pinctrl-1 = <&uart0_sleep>;
-	pinctrl-names = "default", "sleep";
-};
-
-&i2c1 {
-	compatible = "nordic,nrf-twi";
-	/* Cannot be used together with spi1. */
-	/* status = "okay"; */
-	pinctrl-0 = <&i2c1_default>;
-	pinctrl-1 = <&i2c1_sleep>;
-	pinctrl-names = "default", "sleep";
 };
 
 &pwm0 {
 	status = "okay";
 	pinctrl-0 = <&pwm0_default>;
 	pinctrl-1 = <&pwm0_sleep>;
-	pinctrl-names = "default", "sleep";
-};
-
-&spi0 {
-	compatible = "nordic,nrf-spi";
-	/* Cannot be used together with i2c0. */
-	/* status = "okay"; */
-	pinctrl-0 = <&spi0_default>;
-	pinctrl-1 = <&spi0_sleep>;
-	pinctrl-names = "default", "sleep";
-};
-
-&spi2 {
-	compatible = "nordic,nrf-spi";
-	status = "disabled";
-	pinctrl-0 = <&spi2_default>;
-	pinctrl-1 = <&spi2_sleep>;
 	pinctrl-names = "default", "sleep";
 };
 
@@ -155,11 +156,11 @@
 		sck-frequency = <8000000>;
 		jedec-id = [c2 28 17];
 		sfdp-bfp = [
-						   e5 20 f1 ff  ff ff ff 03  44 eb 08 6b  08 3b 04 bb
-						   ee ff ff ff  ff ff 00 ff  ff ff 00 ff  0c 20 0f 52
-						   10 d8 00 ff  23 72 f5 00  82 ed 04 cc  44 83 68 44
-						   30 b0 30 b0  f7 c4 d5 5c  00 be 29 ff  f0 d0 ff ff
-				   ];
+			e5 20 f1 ff  ff ff ff 03  44 eb 08 6b  08 3b 04 bb
+			ee ff ff ff  ff ff 00 ff  ff ff 00 ff  0c 20 0f 52
+			10 d8 00 ff  23 72 f5 00  82 ed 04 cc  44 83 68 44
+			30 b0 30 b0  f7 c4 d5 5c  00 be 29 ff  f0 d0 ff ff
+		];
 		size = <67108864>;
 		has-dpd;
 		t-enter-dpd = <10000>;
@@ -190,9 +191,15 @@ zephyr_udc0: &usbd {
 	};
 };
 
-
-/* Disable unused peripherals to reduce power consumption */
+/*
+ * Everything below is unused on this board. The SoC dtsi already leaves these
+ * disabled, but we state it explicitly so overlays cannot enable them by
+ * accident (no pins are routed for them).
+ */
 &adc {
+	status = "disabled";
+};
+&uart0 {
 	status = "disabled";
 };
 &uart1 {
@@ -204,10 +211,13 @@ zephyr_udc0: &usbd {
 &i2c1 {
 	status = "disabled";
 };
-&pwm0 {
+&spi0 {
 	status = "disabled";
 };
 &spi1 {
+	status = "disabled";
+};
+&spi2 {
 	status = "disabled";
 };
 &spi3 {

@@ -169,7 +169,7 @@ struct usbd_context *farlock3_usbd_setup_device(usbd_msg_cb_t msg_cb)
 		/* doc device init-and-msg end */
 	}
 
-#if CONFIG_SAMPLE_USBD_20_EXTENSION_DESC
+#if CONFIG_FARLOCK3_USBD_20_EXTENSION_DESC
 	(void)usbd_device_set_bcd_usb(&farlock3_usbd, USBD_SPEED_FS, 0x0201);
 	(void)usbd_device_set_bcd_usb(&farlock3_usbd, USBD_SPEED_HS, 0x0201);
 

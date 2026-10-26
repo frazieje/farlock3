@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  One channel of a Toshiba TB6612FNG dual h-bridge used as a brushed DC
+  motor driver. Speed is set with the PWM input, direction with IN1/IN2 and
+  the whole driver is put to sleep by pulling STBY low.
+
+  Example:
+
+    motor: motor {
+        compatible = "frazieje,tb6612-motor";
+        pwms = <&pwm0 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
+        in1-gpios = <&gpio0 29 GPIO_ACTIVE_HIGH>;
+        in2-gpios = <&gpio0 30 GPIO_ACTIVE_HIGH>;
+        stby-gpios = <&gpio0 31 GPIO_ACTIVE_HIGH>;
+    };
+
+compatible: "frazieje,tb6612-motor"
+
+include: base.yaml
+
+properties:
+  pwms:
+    type: phandle-array
+    required: true
+    description: PWM output connected to the PWMA (or PWMB) input.
+
+  in1-gpios:
+    type: phandle-array
+    required: true
+    description: GPIO connected to AIN1 (or BIN1).
+
+  in2-gpios:
+    type: phandle-array
+    required: true
+    description: GPIO connected to AIN2 (or BIN2).
+
+  stby-gpios:
+    type: phandle-array
+    required: true
+    description: GPIO connected to STBY. Active means the driver is enabled.

@@ -7,23 +7,17 @@
 #include "app_task.h"
 #include "bolt_lock_manager.h"
 #include "clusters/identify.h"
-
-#ifdef CONFIG_THREAD_WIFI_SWITCHING
-#include "thread_wifi_switch.h"
-#endif
+#include "nfc.h"
 
 #include "app/matter_init.h"
 #include "app/task_executor.h"
-
-#ifdef CONFIG_CHIP_NUS
-#include "bt_nus/bt_nus_service.h"
-#endif
 
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <app/clusters/door-lock-server/door-lock-server.h>
 #include <platform/CHIPDeviceLayer.h>
 #include <setup_payload/OnboardingCodesUtil.h>
 
+#include <zephyr/devicetree.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
@@ -36,19 +30,14 @@ namespace
 {
 constexpr EndpointId kLockEndpointId = 1;
 
-#ifdef CONFIG_CHIP_NUS
-constexpr uint16_t kAdvertisingIntervalMin = 400;
-constexpr uint16_t kAdvertisingIntervalMax = 500;
-constexpr uint8_t kLockNUSPriority = 2;
-#endif
-
-#ifdef CONFIG_THREAD_WIFI_SWITCHING
-k_timer sSwitchTransportTimer;
-constexpr uint32_t kSwitchTransportTimeout = 10000;
-#endif
-
+/*
+ * A second push button toggles the bolt for bench testing on development kits.
+ * The real board only has the program button, which the Nordic board layer
+ * uses for commissioning and factory reset.
+ */
+#if DT_NODE_EXISTS(DT_NODELABEL(button1))
 #define APPLICATION_BUTTON_MASK DK_BTN2_MSK
-#define SWITCHING_BUTTON_MASK DK_BTN3_MSK
+#endif
 
 #ifndef CONFIG_CHIP_FACTORY_RESET_ERASE_SETTINGS
 void AppFactoryResetHandler(const ChipDeviceEvent *event, intptr_t /* unused */)
@@ -70,16 +59,13 @@ Nrf::Matter::IdentifyCluster sIdentifyCluster(kLockEndpointId, false, []() {
 
 void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
 {
+#ifdef APPLICATION_BUTTON_MASK
 	if ((APPLICATION_BUTTON_MASK & hasChanged) & state) {
 		Nrf::PostTask([] { LockActionEventHandler(); });
 	}
-
-#ifdef CONFIG_THREAD_WIFI_SWITCHING
-	if (SWITCHING_BUTTON_MASK & hasChanged) {
-		SwitchButtonAction action =
-			(SWITCHING_BUTTON_MASK & state) ? SwitchButtonAction::Pressed : SwitchButtonAction::Released;
-		Nrf::PostTask([action] { SwitchTransportTriggerHandler(action); });
-	}
+#else
+	ARG_UNUSED(state);
+	ARG_UNUSED(hasChanged);
 #endif
 }
 
@@ -92,61 +78,23 @@ void AppTask::LockActionEventHandler()
 	}
 }
 
-#ifdef CONFIG_THREAD_WIFI_SWITCHING
-void AppTask::SwitchTransportEventHandler()
-{
-	LOG_INF("Switching to %s", ThreadWifiSwitch::IsThreadActive() ? "Wi-Fi" : "Thread");
-
-	ThreadWifiSwitch::SwitchTransport();
-}
-
-void AppTask::SwitchTransportTimerTimeoutCallback(k_timer *timer)
-{
-	Nrf::PostTask([] { SwitchTransportEventHandler(); });
-}
-
-void AppTask::SwitchTransportTriggerHandler(const SwitchButtonAction &action)
-{
-	if (action == SwitchButtonAction::Pressed) {
-		LOG_INF("Keep button pressed for %u ms to switch to %s", kSwitchTransportTimeout,
-			ThreadWifiSwitch::IsThreadActive() ? "Wi-Fi" : "Thread");
-		k_timer_start(&sSwitchTransportTimer, K_MSEC(kSwitchTransportTimeout), K_NO_WAIT);
-	} else {
-		LOG_INF("Switching to %s cancelled", ThreadWifiSwitch::IsThreadActive() ? "Wi-Fi" : "Thread");
-		k_timer_stop(&sSwitchTransportTimer);
-	}
-}
-#endif
-
 void AppTask::LockStateChanged(const BoltLockManager::StateData &stateData)
 {
 	switch (stateData.mState) {
 	case BoltLockManager::State::kLockingInitiated:
 		LOG_INF("Lock action initiated");
 		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Blink(50, 50);
-#ifdef CONFIG_CHIP_NUS
-		Nrf::GetNUSService().SendData("locking", sizeof("locking"));
-#endif
 		break;
 	case BoltLockManager::State::kLockingCompleted:
 		LOG_INF("Lock action completed");
 		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(true);
-#ifdef CONFIG_CHIP_NUS
-		Nrf::GetNUSService().SendData("locked", sizeof("locked"));
-#endif
 		break;
 	case BoltLockManager::State::kUnlockingInitiated:
 		LOG_INF("Unlock action initiated");
 		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Blink(50, 50);
-#ifdef CONFIG_CHIP_NUS
-		Nrf::GetNUSService().SendData("unlocking", sizeof("unlocking"));
-#endif
 		break;
 	case BoltLockManager::State::kUnlockingCompleted:
 		LOG_INF("Unlock action completed");
-#ifdef CONFIG_CHIP_NUS
-		Nrf::GetNUSService().SendData("unlocked", sizeof("unlocked"));
-#endif
 		Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(false);
 		break;
 	}
@@ -228,29 +176,18 @@ void AppTask::UpdateClusterStateHandler(const BoltLockManager::StateData &stateD
 	}
 }
 
-#ifdef CONFIG_CHIP_NUS
-void AppTask::NUSLockCallback(void *context)
+void AppTask::ReportLockJammed()
 {
-	LOG_DBG("Received LOCK command from NUS");
-	if (BoltLockMgr().GetState().mState == BoltLockManager::State::kLockingCompleted ||
-	    BoltLockMgr().GetState().mState == BoltLockManager::State::kLockingInitiated) {
-		LOG_INF("Device is already locked");
-	} else {
-		Nrf::PostTask([] { LockActionEventHandler(); });
-	}
-}
+	CHIP_ERROR err = SystemLayer().ScheduleLambda([]() {
+		if (!DoorLockServer::Instance().SendLockAlarmEvent(kLockEndpointId, AlarmCodeEnum::kLockJammed)) {
+			LOG_ERR("Failed to send LockJammed alarm event");
+		}
+	});
 
-void AppTask::NUSUnlockCallback(void *context)
-{
-	LOG_DBG("Received UNLOCK command from NUS");
-	if (BoltLockMgr().GetState().mState == BoltLockManager::State::kUnlockingCompleted ||
-	    BoltLockMgr().GetState().mState == BoltLockManager::State::kUnlockingInitiated) {
-		LOG_INF("Device is already unlocked");
-	} else {
-		Nrf::PostTask([] { LockActionEventHandler(); });
+	if (err != CHIP_NO_ERROR) {
+		LOG_ERR("Failed to schedule LockJammed alarm: %" CHIP_ERROR_FORMAT, err.Format());
 	}
 }
-#endif
 
 #ifdef CONFIG_NCS_SAMPLE_MATTER_TEST_EVENT_TRIGGERS
 CHIP_ERROR AppTask::DoorLockJammedEventCallback(Nrf::Matter::TestEventTrigger::TriggerValue)
@@ -265,15 +202,7 @@ CHIP_ERROR AppTask::DoorLockJammedEventCallback(Nrf::Matter::TestEventTrigger::T
 CHIP_ERROR AppTask::Init()
 {
 	/* Initialize Matter stack */
-#ifdef CONFIG_THREAD_WIFI_SWITCHING
-	/* In the Thread/Wi-Fi switchable mode, it is the ThreadWifiSwitch module that owns the NetworkCommissioning
-	   instances, so offload the initialization module from controlling that by explicitly setting the
-	   mNetworkingInstance parameter to nullptr. Otherwise, the initialization module instantiates the
-	   NetworkCommissioning object and handles it by default internally. */
-	ReturnErrorOnFailure(Nrf::Matter::PrepareServer(Nrf::Matter::InitData{ .mNetworkingInstance = nullptr }));
-#else
 	ReturnErrorOnFailure(Nrf::Matter::PrepareServer());
-#endif
 
 	if (!Nrf::GetBoard().Init(ButtonEventHandler)) {
 		LOG_ERR("User interface initialization failed.");
@@ -292,30 +221,14 @@ CHIP_ERROR AppTask::Init()
 	ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(AppFactoryResetHandler, 0));
 #endif
 
-#ifdef CONFIG_THREAD_WIFI_SWITCHING
-	CHIP_ERROR err = ThreadWifiSwitch::StartCurrentTransport();
-	if (err != CHIP_NO_ERROR) {
-		LOG_ERR("ThreadWifiSwitch::StartCurrentTransport() failed: %" CHIP_ERROR_FORMAT, err.Format());
-		return err;
-	}
-
-	k_timer_init(&sSwitchTransportTimer, &AppTask::SwitchTransportTimerTimeoutCallback, nullptr);
-#endif
-
-#ifdef CONFIG_CHIP_NUS
-	/* Initialize Nordic UART Service for Lock purposes */
-	if (!Nrf::GetNUSService().Init(kLockNUSPriority, kAdvertisingIntervalMin, kAdvertisingIntervalMax)) {
-		ChipLogError(Zcl, "Cannot initialize NUS service");
-	}
-	Nrf::GetNUSService().RegisterCommand("Lock", sizeof("Lock"), NUSLockCallback, nullptr);
-	Nrf::GetNUSService().RegisterCommand("Unlock", sizeof("Unlock"), NUSUnlockCallback, nullptr);
-	if (!Nrf::GetNUSService().StartServer()) {
-		LOG_ERR("GetNUSService().StartServer() failed");
-	}
-#endif
-
-	/* Initialize lock manager */
+	/* Initialize lock manager (motor, switches, credentials) */
 	BoltLockMgr().Init(LockStateChanged);
+
+	/* NFC tag. The settings subsystem is up at this point (PrepareServer initialised it). */
+	int nfcErr = nfc_tag_init();
+	if (nfcErr) {
+		LOG_ERR("NFC tag initialisation failed (%d), continuing without NFC", nfcErr);
+	}
 
 	/* Register Door Lock test event trigger */
 #ifdef CONFIG_NCS_SAMPLE_MATTER_TEST_EVENT_TRIGGERS

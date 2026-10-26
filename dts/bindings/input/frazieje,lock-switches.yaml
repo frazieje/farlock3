@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Mechanical switches of the FARLock bolt mechanism.
+
+  The position switch is a limit switch that is active in one end position
+  of the bolt and inactive in the other. The direction switch tells the
+  firmware which way the motor must turn to lock the door (left or right
+  handed installation).
+
+  Which end position means "locked" depends on the direction switch:
+  locked = position_active == direction_active.
+
+compatible: "frazieje,lock-switches"
+
+include: base.yaml
+
+properties:
+  position-gpios:
+    type: phandle-array
+    required: true
+    description: Bolt position (limit) switch input.
+
+  direction-gpios:
+    type: phandle-array
+    required: true
+    description: Handedness switch input. Active selects the "right" direction.
