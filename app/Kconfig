@@ -221,6 +221,13 @@ config STATE_LEDS
 # Thread networking: sleepy end device
 if OPENTHREAD
 
+# Build OpenThread from source instead of Nordic's prebuilt MTD library. The
+# prebuilt library has a fixed feature set; options such as the periodic
+# parent search below are silently ignored unless the stack is compiled here.
+choice OPENTHREAD_IMPLEMENTATION
+	default OPENTHREAD_SOURCES
+endchoice
+
 choice OPENTHREAD_NORDIC_LIBRARY_CONFIGURATION
 	default OPENTHREAD_NORDIC_LIBRARY_MTD
 endchoice
