@@ -239,6 +239,14 @@ config CHIP_ENABLE_ICD_SUPPORT
 config OPENTHREAD_DEFAULT_TX_POWER
 	default 8
 
+# Periodic parent search. A sleepy end device otherwise keeps its parent until
+# that link fails outright, so a lock that attached straight to the border
+# router never moves to a closer Thread router added later. With this on it
+# re-evaluates every CHECK_INTERVAL (9 min) while the parent's RSS is below
+# RSS_THRESHOLD (-65 dBm) and backs off BACKOFF_INTERVAL (10 h) after a search.
+config OPENTHREAD_PARENT_SEARCH
+	default y
+
 endif # OPENTHREAD
 
 source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.features"
